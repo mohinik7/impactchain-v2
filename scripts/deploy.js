@@ -20,15 +20,25 @@ async function main() {
   await projectEscrow.waitForDeployment();
   console.log("✅ ProjectEscrow deployed to:", projectEscrow.target);
 
-  // Step 3: Verify the connection
-  console.log("\n🔗 Verifying contract connection...");
+  // Step 3: Transfer ImpactToken ownership to ProjectEscrow
+  console.log("\n📝 Transferring ImpactToken ownership to ProjectEscrow...");
+  const transferTx = await impactToken.transferOwnership(projectEscrow.target);
+  await transferTx.wait();
+  console.log("✅ Ownership transferred successfully");
+
+  // Step 4: Verify the connections
+  console.log("\n🔗 Verifying contract connections...");
   const connectedImpactToken = await projectEscrow.impactToken();
-  console.log("ImpactToken address in ProjectEscrow:", connectedImpactToken);
+  const tokenOwner = await impactToken.owner();
   
-  if (connectedImpactToken.toLowerCase() === impactToken.target.toLowerCase()) {
-    console.log("✅ Contract connection verified!");
+  console.log("ImpactToken address in ProjectEscrow:", connectedImpactToken);
+  console.log("ImpactToken owner:", tokenOwner);
+  
+  if (connectedImpactToken.toLowerCase() === impactToken.target.toLowerCase() && 
+      tokenOwner.toLowerCase() === projectEscrow.target.toLowerCase()) {
+    console.log("✅ Contract connections verified!");
   } else {
-    console.log("❌ Contract connection failed!");
+    console.log("❌ Contract connection verification failed!");
   }
 
   // Step 4: Save deployment info

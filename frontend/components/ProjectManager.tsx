@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAccount } from 'wagmi'
 import { useProjects, Project, Milestone } from '../hooks/useProjects'
+import { useWeb3 } from '../contexts/web3Context'
+import { useDonateToProject, useVerifyMilestone } from '../hooks/useContracts'
 import { 
   Plus, 
   Heart, 
@@ -17,18 +19,8 @@ import {
 
 export default function ProjectManager() {
   const { address, isConnected } = useAccount()
-  const {
-    projects,
-    loading,
-    error,
-    createProject,
-    donateToProject,
-    verifyMilestone,
-    payMilestone,
-    completeProject,
-    fetchMilestones
-  } = useProjects()
-
+  const { isConnected: isCtxConnected, connectWallet } = useWeb3()
+  const { projects, isLoading, error, createProject, donateToProject, verifyMilestone } = useProjects()
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [milestones, setMilestones] = useState<Milestone[]>([])
@@ -45,15 +37,49 @@ export default function ProjectManager() {
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!projectName || !projectDescription || !ngoAddress || milestoneAmounts.length === 0 || milestoneDescriptions.length === 0) {
+      console.error('Missing required fields')
+      return
+    }
+
     try {
+      console.log('Creating project with params:', {
+        ngoAddress,
+        milestoneAmounts: milestoneAmounts.filter(amount => amount.trim() !== ''),
+        milestoneDescriptions: milestoneDescriptions.filter(desc => desc.trim() !== ''),
+        projectName,
+        projectDescription
+      })
+
+      const filteredAmounts = milestoneAmounts.filter(amount => amount.trim() !== '')
+      const filteredDescriptions = milestoneDescriptions.filter(desc => desc.trim() !== '')
+
+      if (filteredAmounts.length === 0 || filteredDescriptions.length === 0) {
+        alert('Please add at least one milestone with an amount and description')
+        return
+      }
+
+      if (filteredAmounts.length !== filteredDescriptions.length) {
+        alert('Each milestone must have both an amount and description')
+        return
+      }
+
+      // Ensure wallet is connected for signer-backed transactions
+      if (!isCtxConnected) {
+        await connectWallet()
+      }
+
       await createProject(
         ngoAddress,
-        milestoneAmounts.filter(amount => amount.trim() !== ''),
-        milestoneDescriptions.filter(desc => desc.trim() !== ''),
+        filteredAmounts,
+        filteredDescriptions,
         projectName,
         projectDescription
       )
+
+      alert('Transaction sent. Project will appear once confirmed.')
       setShowCreateForm(false)
+      
       // Reset form
       setProjectName('')
       setProjectDescription('')
@@ -62,6 +88,7 @@ export default function ProjectManager() {
       setMilestoneDescriptions([''])
     } catch (error) {
       console.error('Failed to create project:', error)
+      alert(error instanceof Error ? error.message : 'Failed to create project. Check console for details.')
     }
   }
 
@@ -179,7 +206,7 @@ export default function ProjectManager() {
                   type="text"
                   value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
-                  className="input-field"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent"
                   required
                 />
               </div>
@@ -190,7 +217,7 @@ export default function ProjectManager() {
                 <textarea
                   value={projectDescription}
                   onChange={(e) => setProjectDescription(e.target.value)}
-                  className="input-field h-20"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent h-20"
                   required
                 />
               </div>
@@ -202,7 +229,7 @@ export default function ProjectManager() {
                   type="text"
                   value={ngoAddress}
                   onChange={(e) => setNgoAddress(e.target.value)}
-                  className="input-field"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent"
                   placeholder="0x..."
                   required
                 />
@@ -222,7 +249,7 @@ export default function ProjectManager() {
                         newAmounts[index] = e.target.value
                         setMilestoneAmounts(newAmounts)
                       }}
-                      className="input-field flex-1"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent flex-1"
                       placeholder="Amount in ETH"
                       required
                     />
@@ -234,7 +261,7 @@ export default function ProjectManager() {
                         newDescriptions[index] = e.target.value
                         setMilestoneDescriptions(newDescriptions)
                       }}
-                      className="input-field flex-2"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent flex-2"
                       placeholder="Milestone description"
                       required
                     />
@@ -336,7 +363,7 @@ export default function ProjectManager() {
                       <button
                         onClick={() => handleDonate(selectedProject.id)}
                         className="btn-primary w-full"
-                        disabled={!donationAmount || loading}
+                        disabled={!donationAmount || isLoading}
                       >
                         <Heart className="h-4 w-4 mr-2 inline" />
                         Donate
@@ -368,7 +395,7 @@ export default function ProjectManager() {
                       <button
                         onClick={() => handleCompleteProject(selectedProject.id)}
                         className="btn-primary w-full"
-                        disabled={!impactValue || !imageUri || loading}
+                        disabled={!impactValue || !imageUri || isLoading}
                       >
                         <Award className="h-4 w-4 mr-2 inline" />
                         Complete & Mint Token
@@ -403,7 +430,7 @@ export default function ProjectManager() {
                               <button
                                 onClick={() => handleVerifyMilestone(selectedProject.id, index)}
                                 className="btn-secondary text-xs px-2 py-1"
-                                disabled={loading}
+                                disabled={isLoading}
                               >
                                 Verify
                               </button>
@@ -412,7 +439,7 @@ export default function ProjectManager() {
                               <button
                                 onClick={() => handlePayMilestone(selectedProject.id, index)}
                                 className="btn-primary text-xs px-2 py-1"
-                                disabled={loading}
+                                disabled={isLoading}
                               >
                                 Pay
                               </button>
@@ -431,7 +458,7 @@ export default function ProjectManager() {
 
       {/* Projects List */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {loading ? (
+        {isLoading ? (
           <div className="col-span-full text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
             <p className="text-gray-600 mt-2">Loading projects...</p>
